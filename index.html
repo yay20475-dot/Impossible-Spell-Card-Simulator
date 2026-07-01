@@ -1,0 +1,332 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"><title>Impossible Spell Card Simulator</title><style>
+*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none}
+body{background:#0a0a0f;font-family:sans-serif;overflow:hidden;display:flex;flex-direction:column;align-items:center;height:100vh;width:100vw}
+#game-container{position:relative;width:100%;max-width:450px;height:62%;background:radial-gradient(circle,#10002b,#000);border-bottom:4px solid #ff007f;box-shadow:0 5px 25px rgba(255,0,127,.4)}
+canvas{display:block;width:100%;height:100%}
+#ui-overlay{position:absolute;top:10px;left:10px;color:#fff;font-size:11px;text-shadow:2px 2px #000;pointer-events:none;line-height:1.4}
+#go-screen{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);display:none;flex-direction:column;justify-content:center;align-items:center;color:#ff007f;font-weight:bold;font-size:24px;z-index:10}
+#rst-btn{margin-top:15px;padding:8px 18px;background:#ff007f;color:#fff;border:none;border-radius:5px;font-size:15px;cursor:pointer;box-shadow:0 0 10px #ff007f}
+#control-panel{width:100%;max-width:450px;flex:1;display:flex;justify-content:space-between;align-items:center;background:#111116;padding:0 10px}
+
+.dpad{
+    position:relative;
+    width:190px;
+    height:190px;
+}
+
+.btn{
+    position:absolute;
+    width:64px;
+    height:64px;
+    background:#22223b;
+    border:2px solid #4a4e69;
+    color:#fff;
+    font-size:28px;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    border-radius:14px;
+    box-shadow:0 4px #000;
+}
+
+.btn-u{top:0;left:63px;}
+.btn-d{bottom:0;left:63px;}
+.btn-l{top:63px;left:0;}
+.btn-r{top:63px;right:0;}
+
+.action-box{display:flex;flex-direction:column;gap:5px;align-items:center}
+#btn-toggle-fire{width:110px;height:35px;background:#ffaa00;border:2px solid #ffcc00;color:#000;font-size:11px;font-weight:bold;display:flex;justify-content:center;align-items:center;border-radius:8px;box-shadow:0 3px #000;cursor:pointer}
+#btn-focus{width:110px;height:35px;background:#3a0ca3;border:2px solid #7209b7;color:#fff;font-size:11px;font-weight:bold;display:flex;justify-content:center;align-items:center;border-radius:8px;box-shadow:0 3px #000}
+.item-row{display:flex;gap:6px}
+.it-btn{width:42px;height:42px;color:#fff;font-size:10px;font-weight:bold;display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:8px;box-shadow:0 3px #000}
+#it-umbrella{background:#c1121f;border:2px solid #f77f00}
+#it-fabric{background:#7209b7;border:2px solid #b5179e}
+#it-camera{background:#0077b6;border:2px solid #00b4d8}
+.count-lbl{font-size:8px;margin-top:1px;color:#ffff00}
+</style></head><body>
+<div id="game-container">
+    <canvas id="c"></canvas>
+    <div id="ui-overlay">
+        <div>SPELL <span id="sp-num">1/4</span>: <span id="sp-name" style="color:#ff007f;font-weight:bold">"BUTTERFLY STORM"</span></div>
+        <div>LIVES: <span id="lv" style="color:#00f5d4">❤❤❤</span> | BOSS HP: <span id="bhp" style="color:#ff5400">100%</span></div>
+        <div>ITEMS (UMB-FAB-CAM): <span id="it-count" style="color:#ffff00">2-2-2</span></div>
+    </div>
+    <div id="go-screen"><p id="go-txt">GAME OVER</p><button id="rst-btn" onclick="resetGame()">RETRY</button></div>
+</div>
+<div id="control-panel">
+    <div class="dpad">
+        <div class="btn btn-u" id="p-u">▲</div><div class="btn btn-l" id="p-l">◀</div>
+        <div class="btn btn-r" id="p-r">▶</div><div class="btn btn-d" id="p-d">▼</div>
+    </div>
+    <div class="action-box">
+        <div class="item-row">
+            <div class="it-btn" id="it-umbrella"><div>UMB</div><div class="count-lbl" id="c-umb">x2</div></div>
+            <div class="it-btn" id="it-fabric"><div>FAB</div><div class="count-lbl" id="c-fab">x2</div></div>
+            <div class="it-btn" id="it-camera"><div>CAM</div><div class="count-lbl" id="c-cam">x2</div></div>
+        </div>
+        <div id="btn-toggle-fire">CEASE FIRE</div>
+        <div id="btn-focus">FOCUS MODE</div>
+    </div>
+</div>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d"),lvVal=document.getElementById("lv"),bhpVal=document.getElementById("bhp"),spNum=document.getElementById("sp-num"),spName=document.getElementById("sp-name"),goScr=document.getElementById("go-screen"),goTxt=document.getElementById("go-txt"),fBtn=document.getElementById("btn-focus"),tBtn=document.getElementById("btn-toggle-fire"),itCount=document.getElementById("it-count");
+const lblUmb=document.getElementById("c-umb"),lblFab=document.getElementById("c-fab"),lblCam=document.getElementById("c-cam");
+let act=true,lives=3,invulnFrames=0,cameraFlashRadius=0,bossHp=1000,maxBossHp=1000,frames=0,bullets=[],pBullets=[],head=null,isShooting=true,keys={up:false,down:false,left:false,right:false,focus:false};
+const p={x:0,y:0,baseSpd:3.8,r:1.5,vr:10},b={x:0,y:60,ang:0,dir:1};
+
+const imgPlayer = new Image();
+imgPlayer.src = "https://i.ibb.co/fzmMp82H/image.png";
+
+let itemCounts = { umbrella: 2, fabric: 2, camera: 2 };
+const spells=[
+    {name:'"BUTTERFLY STORM"',ratio:0.75},
+    {name:'"SEKIBANKI\'S FLYING HEAD"',ratio:0.50},
+    {name:'"IMPOSSIBLE HELL"',ratio:0.25},
+    {name:'"WATER SIGN: LUNATIC RED SLAP"',ratio:0.00}
+];
+let currentSpellIdx=0;
+
+function updateItemUI(){itCount.textContent=`${itemCounts.umbrella}-${itemCounts.fabric}-${itemCounts.camera}`}
+function resize(){canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight;if(p.x===0){p.x=canvas.width/2;p.y=canvas.height*.8;b.x=canvas.width/2}}
+resize();window.addEventListener("resize",resize);
+const maps=[{id:"p-u",k:"up"},{id:"p-d",k:"down"},{id:"p-l",k:"left"},{id:"p-r",k:"right"}];
+maps.forEach(m=>{const el=document.getElementById(m.id);el.addEventListener("touchstart",e=>{e.preventDefault();keys[m.k]=true});el.addEventListener("touchend",e=>{e.preventDefault();keys[m.k]=false});el.addEventListener("touchcancel",e=>{e.preventDefault();keys[m.k]=false})});
+
+fBtn.addEventListener("touchstart",e=>{e.preventDefault();keys.focus=true;fBtn.classList.add("active")});
+fBtn.addEventListener("touchend",e=>{e.preventDefault();keys.focus=false;fBtn.classList.remove("active")});
+fBtn.addEventListener("touchcancel",e=>{e.preventDefault();keys.focus=false;fBtn.classList.remove("active")});
+
+tBtn.addEventListener("touchstart",e=>{e.preventDefault();toggleFire()});
+
+document.getElementById("it-umbrella").addEventListener("touchstart",e=>{e.preventDefault();useUmbrella()});
+document.getElementById("it-fabric").addEventListener("touchstart",e=>{e.preventDefault();useFabric()});
+document.getElementById("it-camera").addEventListener("touchstart",e=>{e.preventDefault();useCamera()});
+
+window.addEventListener("keydown",e=>{
+    if(e.key.includes("Arrow"))keys[e.key.replace("Arrow","").toLowerCase()]=true;
+if(e.key==="Shift")keys.focus=true;
+    if(e.key===" " || e.key==="Spacebar"){e.preventDefault();toggleFire()}
+    if(e.key.toLowerCase()==="z")useUmbrella();if(e.key.toLowerCase()==="x")useFabric();if(e.key.toLowerCase()==="c")useCamera();
+});
+// Chuẩn hóa bộ lắng nghe bàn phím xóa sạch ký tự rác
+window.addEventListener("keyup",e=>{
+    if(e.key.includes("Arrow"))keys[e.key.replace("Arrow","").toLowerCase()]=false;
+    if(e.key==="Shift")keys.focus=false;
+});
+
+function toggleFire(){
+    isShooting = !isShooting;
+    tBtn.textContent = isShooting ? "CEASE FIRE" : "AUTO FIRE";
+    tBtn.style.background = isShooting ? "#ffaa00" : "#4caf50";
+}
+function useUmbrella(){
+    if(!act||itemCounts.umbrella<=0)return;
+    let margin = 25;
+    if(p.x <= margin || p.x >= canvas.width - margin) {
+        itemCounts.umbrella--; lblUmb.textContent="x"+itemCounts.umbrella; updateItemUI();
+        if(p.x < canvas.width/2) p.x = canvas.width - margin; else p.x = margin;
+    }
+}
+function useFabric(){
+    if(!act||itemCounts.fabric<=0||invulnFrames>0)return;
+    itemCounts.fabric--;lblFab.textContent="x"+itemCounts.fabric;updateItemUI();
+    invulnFrames=120;
+}
+function useCamera(){
+    if(!act||itemCounts.camera<=0||cameraFlashRadius>0)return;
+    itemCounts.camera--;lblCam.textContent="x"+itemCounts.camera;updateItemUI();
+    cameraFlashRadius=1;
+}
+
+function spawnSekibankiHead(){
+    head = { x: b.x, y: b.y, vx: 0, vy: 0, timer: 330, state: "chase" };
+}
+
+function update(){
+    if(!act)return;
+    if(invulnFrames>0)invulnFrames--;
+    let currentSpd=keys.focus?p.baseSpd*0.4:p.baseSpd;
+    if(keys.up&&p.y>p.vr)p.y-=currentSpd;if(keys.down&&p.y<canvas.height-p.vr)p.y+=currentSpd;if(keys.left&&p.x>p.vr)p.x-=currentSpd;if(keys.right&&p.x<canvas.width-p.vr)p.x+=currentSpd;
+    frames++;
+    
+    if(isShooting && frames%5===0){
+        pBullets.push(
+            {x:p.x,y:p.y-10,vx:0,vy:-8},
+            {x:p.x-4,y:p.y-6,vx:-1.2,vy:-7.6},
+            {x:p.x+4,y:p.y-6,vx:1.2,vy:-7.6},
+            {x:p.x-8,y:p.y-4,vx:-2.4,vy:-7.2},
+            {x:p.x+8,y:p.y-4,vx:2.4,vy:-7.2}
+        );
+    }
+    
+    b.x+=b.dir*0.8;if(b.x>canvas.width-40||b.x<40)b.dir*=-1;
+
+    if(currentSpellIdx===0){
+        if(frames%2===0){let nw=6;b.ang+=0.08;for(let i=0;i<nw;i++){let a=b.ang+(i*Math.PI*2/nw);bullets.push({x:b.x,y:b.y,vx:Math.cos(a)*2,vy:Math.sin(a)*2,r:4.5,state:"move",c:`hsl(${(frames+i*30)%360},100%,65%)`})}}
+    }else if(currentSpellIdx===1){
+        if(!head && frames%200===0){ spawnSekibankiHead(); }
+        if(head) {
+            if(head.state === "chase") {
+                head.timer--;
+                let dx = p.x - head.x, dy = p.y - head.y;
+                let dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                head.x += (dx/dist) * 1.6; head.y += (dy/dist) * 1.6;
+                if(frames%3===0) {
+                    bullets.push({x: head.x, y: head.y, vx: 0, vy: 0, r: 5.5, state: "freeze", c: "#ff3333"});
+                }
+                if(head.timer <= 0) {
+                    head.state = "flyaway";
+                    let angle = Math.random() * Math.PI * 2;
+                    head.vx = Math.cos(angle) * 5.5; head.vy = Math.sin(angle) * 5.5;
+                    bullets.forEach(bl => {
+                        if(bl.state === "freeze") {
+                            bl.state = "move";
+                            let randAng = Math.random() * Math.PI * 2;
+                            let speed = 1.3 + Math.random() * 2.2;
+                            bl.vx = Math.cos(randAng) * speed; bl.vy = Math.sin(randAng) * speed;
+                        }
+                    });
+                }
+            } else if(head.state === "flyaway") {
+                head.x += head.vx; head.y += head.vy;
+                if(head.y < -50 || head.y > canvas.height+50 || head.x < -50 || head.x > canvas.width+50) { head = null; }
+            }
+        }
+    }else if(currentSpellIdx===2){
+        if(frames%15===0){let nw=16;for(let i=0;i<nw;i++){let a=(i*Math.PI*2/nw);bullets.push({x:b.x,y:b.y,vx:Math.cos(a)*1.5,vy:Math.sin(a)*1.5,r:5,state:"move",c:"#ffff00"})}}
+        if(frames%8===0){bullets.push({x:Math.random()*canvas.width,y:0,vx:0,vy:2.2,r:5.5,state:"move",c:"#ff007f"})}
+
+}else if(currentSpellIdx===3){
+
+    let cycle = frames % 280;
+
+    if(cycle < 180){
+
+        // Đổi chiều xoay sau mỗi đợt bắn
+        let round = Math.floor(frames / 280);
+        let dir = (round % 2 === 0) ? 1 : -1;
+
+        b.ang += 0.03 * dir;
+
+        if(frames % 4 === 0){
+
+            let dirX = Math.cos(b.ang);
+            let dirY = Math.sin(b.ang);
+
+            let sideX = -dirY;
+            let sideY = dirX;
+
+            for(let i=-4.5;i<=4.5;i++){
+
+                bullets.push({
+                    x:b.x + sideX*i*8,
+                    y:b.y + sideY*i*8,
+                    vx:dirX*3,
+                    vy:dirY*3,
+                    r:4.5,
+                    state:"move",
+                    c:"#4cc9f0"
+                });
+
+            }
+
+        }
+
+    }
+
+}
+
+    if(cameraFlashRadius>0){ cameraFlashRadius+=8; if(cameraFlashRadius>180)cameraFlashRadius=0; }
+
+    for(let i=pBullets.length-1;i>=0;i--){
+        let pb=pBullets[i];pb.x+=pb.vx;pb.y+=pb.vy;
+        if(pb.y<-10||pb.x<-10||pb.x>canvas.width+10){pBullets.splice(i,1);continue}
+        let dbx=pb.x-b.x,dby=pb.y-b.y;
+        if(Math.sqrt(dbx*dbx+dby*dby)<20){
+            pBullets.splice(i,1);bossHp-=2.5;
+            let hpPct=Math.max(0,Math.floor((bossHp/maxBossHp)*100));bhpVal.textContent=hpPct+"%";
+
+let currentMin = maxBossHp * spells[currentSpellIdx].ratio;
+
+if(bossHp <= currentMin){
+
+                bullets=[];head=null;currentSpellIdx++;
+                if(currentSpellIdx >= spells.length){
+                    act=false;goTxt.textContent="VICTORY! YOU WIN";goTxt.style.color="#00f5d4";goScr.style.display="flex";
+                }else{spNum.textContent=(currentSpellIdx+1)+"/4";spName.textContent=spells[currentSpellIdx].name;if(currentSpellIdx===1)spawnSekibankiHead();}
+            }
+            continue;
+        }
+    }
+
+    for(let i=bullets.length-1;i>=0;i--){
+        let bl=bullets[i];
+        if(bl.state === "move") { bl.x+=bl.vx; bl.y+=bl.vy; }
+        if(cameraFlashRadius>0){
+            let rw = cameraFlashRadius * 1.5; let rh = cameraFlashRadius;
+            if(bl.x >= p.x - rw && bl.x <= p.x + rw && bl.y >= p.y - rh && bl.y <= p.y + rh){bullets.splice(i,1); continue;}
+        }
+        if(bl.y>canvas.height+20||bl.y<-20||bl.x<-20||bl.x>canvas.width+20){bullets.splice(i,1);continue}
+        if(invulnFrames>0)continue;
+        if(Math.sqrt((bl.x-p.x)**2+(bl.y-p.y)**2)<bl.r+p.r){
+            lives--;bullets=[];head=null;if(currentSpellIdx===1)spawnSekibankiHead();
+            if(lives<=0){lives=0;lvVal.textContent="OUT OF LIVES";act=false;goTxt.textContent="GAME OVER";goTxt.style.color="#ff007f";goScr.style.display="flex"}
+            else{lvVal.textContent="❤".repeat(lives);p.x=canvas.width/2;p.y=canvas.height*.8}
+            break;
+        }
+    }
+}
+
+function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.shadowBlur=15;ctx.shadowColor="#ff5400";ctx.fillStyle="#ff5400";ctx.beginPath();ctx.arc(b.x,b.y,18,0,Math.PI*2);ctx.fill();
+    
+    ctx.shadowBlur=4;ctx.shadowColor="#00b4d8";ctx.fillStyle="#00b4d8";
+    pBullets.forEach(pb=>{ctx.fillRect(pb.x-1.5,pb.y,3,9)});ctx.shadowBlur=0;
+    
+    bullets.forEach(bl=>{
+        ctx.shadowBlur=bl.state==="freeze"?10:4;ctx.shadowColor=bl.state==="freeze"?"#ff0000":bl.c;
+        ctx.fillStyle=bl.state==="freeze"?"#ff0033":bl.c;ctx.beginPath();ctx.arc(bl.x,bl.y,bl.r,0,Math.PI*2);ctx.fill();
+    });
+
+    if(head) {
+        ctx.shadowBlur=12;ctx.shadowColor="#ff0055";ctx.fillStyle="#ff0055";ctx.beginPath();ctx.arc(head.x, head.y, 11, 0, Math.PI*2);ctx.fill();
+        ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(head.x, head.y, 4, 0, Math.PI*2);ctx.fill();
+    }
+    if(cameraFlashRadius>0){
+        ctx.strokeStyle="rgba(0, 119, 182, 0.8)";ctx.lineWidth=4;ctx.shadowBlur=10;ctx.shadowColor="#0077b6";
+        let rw = cameraFlashRadius * 1.5; let rh = cameraFlashRadius;
+        ctx.strokeRect(p.x - rw, p.y - rh, rw * 2, rh * 2);ctx.shadowBlur=0;
+    }
+    if(invulnFrames>0){ctx.shadowBlur=15;ctx.shadowColor="#7209b7";ctx.strokeStyle="rgba(181,23,158,0.7)";ctx.lineWidth=3;ctx.beginPath();ctx.arc(p.x,p.y,p.vr+4,0,Math.PI*2);ctx.stroke();}
+    ctx.shadowBlur = 0;
+
+ctx.shadowBlur = 0;
+
+const size = 20; // chỉnh kích thước nếu muốn
+
+ctx.drawImage(
+    imgPlayer,
+    p.x - size/2,
+    p.y - size/2,
+    size,
+    size
+);
+
+// Hitbox khi focus
+if(keys.focus){
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fill();
+}
+}
+function loop(){update();draw();requestAnimationFrame(loop)}
+function resetGame(){
+    lives=3;itemCounts={umbrella:2,fabric:2,camera:2};bossHp=1000;maxBossHp=1000;currentSpellIdx=0;frames=0;invulnFrames=0;cameraFlashRadius=0;bullets=[];pBullets=[];head=null;isShooting=true;
+    p.x=canvas.width/2;p.y=canvas.height*.8;lvVal.textContent="❤❤❤";lblUmb.textContent="x2";lblFab.textContent="x2";lblCam.textContent="x2";
+    tBtn.textContent="CEASE FIRE";tBtn.style.background="#ffaa00";updateItemUI();bhpVal.textContent="100%";spNum.textContent="1/4";spName.textContent=spells[currentSpellIdx].name;goScr.style.display="none";act=true;
+}
+resetGame();
+loop();
+</script></body></html>
